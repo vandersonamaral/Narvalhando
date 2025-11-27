@@ -7,11 +7,10 @@ import {
 } from "fastify-type-provider-zod";
 import jwt from "@fastify/jwt";
 
-import {registerRoutes} from "../auth/register";
-import {authMiddleware} from "../middleware/auth";
+import { registerRoutes } from "../auth/register";
+import { authMiddleware } from "../middleware/auth";
 import loginRoute from "../auth/login";
-
-
+import clienteController from "../controllers/clienteController";
 
 const app = fastify().withTypeProvider<ZodTypeProvider>();
 
@@ -25,6 +24,7 @@ app.setSerializerCompiler(serializerCompiler);
 app.register(fastifyCors, {
   origin: "*",
 });
+app.register(clienteController);
 app.register(registerRoutes);
 
 export default app;
