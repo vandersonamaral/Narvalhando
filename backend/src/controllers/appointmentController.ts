@@ -2,9 +2,6 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../config/prismaClient";
 import { z } from "zod";
 
-/* ---------------------------------------------
-   SCHEMAS (SEM DUPLICAÇÃO)
---------------------------------------------- */
 const idSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
@@ -16,12 +13,10 @@ const appointmentCreateSchema = z.object({
   barberId: z.number().int().positive(),
 });
 
-// Enum unificado
 const statusSchema = z.object({
   status: z.enum(["SCHEDULED", "CANCELED", "COMPLETED"]),
 });
 
-// Usado no filtro /by-date
 const dateQuerySchema = z.object({
   date: z.string().refine((d) => !isNaN(Date.parse(d)), {
     message: "Data inválida (use formato YYYY-MM-DD)",
@@ -29,6 +24,7 @@ const dateQuerySchema = z.object({
 });
 
 export default async function appointmentController(app: FastifyInstance) {
+  
   app.post("/appointment", async (request, reply) => {
     const parsed = appointmentCreateSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send(parsed.error.format());
