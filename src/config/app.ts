@@ -6,7 +6,8 @@ import {
   ZodTypeProvider,
 } from "fastify-type-provider-zod";
 import jwt from "@fastify/jwt";
-
+import appointmentController from "../controllers/appointmentController";
+import serviceController from "../controllers/serviceController";
 import { registerRoutes } from "../auth/register";
 import { authMiddleware } from "../middleware/auth";
 import loginRoute from "../auth/login";
@@ -26,5 +27,7 @@ app.register(fastifyCors, {
 });
 app.register(clienteController);
 app.register(registerRoutes);
+app.register(appointmentController);
+app.register(serviceController);
 
 export default app;
