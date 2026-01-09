@@ -1,10 +1,31 @@
 import "dotenv/config";
-import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "../../generated/prisma";
 
-const connectionString = `${process.env.DATABASE_URL}`
+const connectionString = `${process.env.DATABASE_URL}`;
 
-const adapter = new PrismaPg({ connectionString })
-const prisma = new PrismaClient({ adapter })
+if (!connectionString) {
+  console.error("❌ DATABASE_URL não está definida no arquivo .env");
+  throw new Error("DATABASE_URL não está definida");
+}
 
-export { prisma }
+let adapter;
+let prisma;
+
+try {
+  adapter = new PrismaPg({ connectionString });
+  prisma = new PrismaClient({ adapter });
+  prisma
+    .$connect()
+    .then(() => {
+      
+    })
+    .catch((error) => {
+      console.error("Erro ao conectar ao banco de dados:", error.message);
+    });
+} catch (error: any) {
+  console.error("Erro ao inicializar Prisma Client:", error.message);
+  throw error;
+}
+
+export { prisma };
