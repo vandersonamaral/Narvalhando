@@ -1,11 +1,13 @@
+import "dotenv/config";
 import app from "./config/app";
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || "0.0.0.0";
 
 app
-  .listen({ port: PORT })
+  .listen({ port: PORT, host: HOST })
   .then(() => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running on http://${HOST}:${PORT}`);
   })
   .catch((err) => {
     console.error("Error starting server:", err);
