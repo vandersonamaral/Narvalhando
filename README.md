@@ -48,7 +48,6 @@ Sistema completo para gerenciamento de barbearia desenvolvido com React Native (
 - **Expo Router** para navegação baseada em arquivos
 - **Axios** para requisições HTTP
 - **AsyncStorage** para armazenamento local
-- **Expo Location** para geolocalização (funcionalidade nativa)
 - **Expo Haptics** para feedback tátil
 - **React Native Swiper** para onboarding
 - **Expo Linear Gradient** para gradientes visuais
@@ -345,35 +344,6 @@ npm run web      # Abre no navegador
 - **Serviços**: Gerenciar catálogo de serviços com preços
 - **Clientes**: Manter cadastro de clientes
 
-## �🔧 Troubleshooting
-
-### Backend não conecta ao banco de dados
-
-- Verifique se o PostgreSQL está rodando
-- Confirme as credenciais no arquivo `.env`
-- Execute `npx prisma migrate dev` novamente
-
-### Frontend não conecta ao backend
-
-- Verifique se o backend está rodando
-- Confirme o IP correto no arquivo `src/services/api.ts`
-- Certifique-se de que o dispositivo e o computador estão na mesma rede Wi-Fi
-
-### Erro de permissão de localização
-
-- No Android: Vá em Configurações > Aplicativos > Permissões
-- No iOS: Vá em Configurações > Privacidade > Serviços de Localização
-
-## 📱 Funcionalidade Nativa
-
-O app utiliza **expo-location** para acessar o GPS do dispositivo, permitindo:
-
-- Obter coordenadas em tempo real
-- Calcular distância até barbearias
-- Mostrar barbearias próximas
-
-Veja mais detalhes em [FUNCIONALIDADE_NATIVA.md](frontend/FUNCIONALIDADE_NATIVA.md)
-
 ## 🏗️ Estrutura do Projeto
 
 ```
@@ -504,11 +474,6 @@ Narvalhando/
 
 Este projeto é privado e de uso educacional.
 
-## 👨‍💻 Desenvolvido por
-
-**Vanderson Amaral**
-
-## 📸 Screenshots
 
 ### Principais Telas
 
