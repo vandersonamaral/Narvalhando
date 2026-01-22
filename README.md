@@ -14,7 +14,6 @@ Sistema completo para gerenciamento de barbearia desenvolvido com React Native (
 - [📝 API Endpoints](#-api-endpoints)
 - [🔄 Fluxo da Aplicação](#-fluxo-da-aplicação)
 - [🛠️ Scripts Disponíveis](#️-scripts-disponíveis)
-- [🔧 Troubleshooting](#-troubleshooting)
 - [🏗️ Estrutura do Projeto](#️-estrutura-do-projeto)
 - [⚡ Características Técnicas](#-características-técnicas)
 - [🚀 Melhorias Futuras](#-melhorias-futuras)
@@ -27,7 +26,6 @@ Sistema completo para gerenciamento de barbearia desenvolvido com React Native (
 - 💳 **Sistema de Pagamentos** (PIX, Cartão, Dinheiro)
 - 📈 **Relatórios Detalhados** por período
 - 🎯 **Onboarding Interativo** para novos usuários
-- 📍 **Geolocalização** (funcionalidade nativa)
 - ⚡ **Performance Otimizada** com cache local
 
 ## 🚀 Tecnologias
