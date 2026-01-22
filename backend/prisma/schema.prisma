@@ -23,6 +23,9 @@ model Service {
   duration  Int
   createdAt DateTime @default(now())
 
+  barberId Int
+  barber   Barber @relation(fields: [barberId], references: [id])
+
   appointments Appointment[]
 }
 
@@ -33,6 +36,7 @@ model Barber {
   password  String
   createdAt DateTime @default(now())
 
+  services     Service[]
   appointments Appointment[]
 }
 

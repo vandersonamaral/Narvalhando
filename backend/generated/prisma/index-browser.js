@@ -132,7 +132,8 @@ exports.Prisma.ServiceScalarFieldEnum = {
   name: 'name',
   price: 'price',
   duration: 'duration',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  barberId: 'barberId'
 };
 
 exports.Prisma.BarberScalarFieldEnum = {
