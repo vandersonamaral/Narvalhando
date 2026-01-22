@@ -296,7 +296,7 @@ export default function NovoAgendamento() {
             <MaterialIcons name="phone" size={20} color="#8B4513" />
             <TextInput
               style={styles.input}
-              placeholder="Telefone"
+              placeholder="Telefone (Opcional)"
               value={clientPhone}
               onChangeText={setClientPhone}
               keyboardType="phone-pad"
