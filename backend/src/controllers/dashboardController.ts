@@ -3,62 +3,99 @@ import { prisma } from "../config/prismaClient";
 import { authenticate } from "../middleware/auth";
 
 export async function dashboardRoutes(app: FastifyInstance) {
-  app.get("/dashboard/overview", { preHandler: [authenticate] }, async () => {
-    const totalClients = await prisma.client.count();
-    const totalServices = await prisma.service.count();
-    const totalAppointments = await prisma.appointment.count();
-    const completedAppointments = await prisma.appointment.count({
-      where: { status: "COMPLETED" },
-    });
+  app.get(
+    "/dashboard/overview",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
 
-    return {
-      totalClients,
-      totalServices,
-      totalAppointments,
-      completedAppointments,
-    };
-  });
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
 
-  app.get("/dashboard/revenue", { preHandler: [authenticate] }, async () => {
-    
-    const finished = await prisma.appointment.findMany({
-      where: { status: "COMPLETED" },
-      include: {
-        service: {
-          select: { price: true },
+      const totalClients = await prisma.client.count();
+      const totalServices = await prisma.service.count();
+      const totalAppointments = await prisma.appointment.count({
+        where: { barberId },
+      });
+      const completedAppointments = await prisma.appointment.count({
+        where: { barberId, status: "COMPLETED" },
+      });
+
+      return {
+        totalClients,
+        totalServices,
+        totalAppointments,
+        completedAppointments,
+      };
+    },
+  );
+
+  app.get(
+    "/dashboard/revenue",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
+      const finished = await prisma.appointment.findMany({
+        where: { barberId, status: "COMPLETED" },
+        include: {
+          service: {
+            select: { price: true },
+          },
         },
-      },
-    });
+      });
 
-    const totalRevenue = finished.reduce(
-      (sum, ap) => sum + ap.service.price,
-      0
-    );
+      const totalRevenue = finished.reduce(
+        (sum, ap) => sum + ap.service.price,
+        0,
+      );
 
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
 
-    const monthRevenue = finished
-      .filter((ap) => {
-        const d = new Date(ap.date);
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      })
-      .reduce((sum, ap) => sum + ap.service.price, 0);
+      const monthRevenue = finished
+        .filter((ap) => {
+          const d = new Date(ap.date);
+          return (
+            d.getMonth() === currentMonth && d.getFullYear() === currentYear
+          );
+        })
+        .reduce((sum, ap) => sum + ap.service.price, 0);
 
-    return {
-      totalRevenue,
-      monthRevenue,
-    };
-  });
+      return {
+        totalRevenue,
+        monthRevenue,
+      };
+    },
+  );
 
- 
   app.get(
     "/dashboard/upcoming-appointments",
     { preHandler: [authenticate] },
-    async () => {
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const data = await prisma.appointment.findMany({
-        where: { status: "SCHEDULED" }, // ✔ corrigido
+        where: { barberId, status: "SCHEDULED" }, // ✔ corrigido
         orderBy: { date: "asc" },
         take: 5,
         include: {
@@ -68,16 +105,25 @@ export async function dashboardRoutes(app: FastifyInstance) {
       });
 
       return data;
-    }
+    },
   );
 
-  
   app.get(
     "/dashboard/popular-services",
     { preHandler: [authenticate] },
-    async () => {
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const data = await prisma.appointment.groupBy({
         by: ["serviceId"],
+        where: { barberId },
         _count: { serviceId: true },
         orderBy: {
           _count: { serviceId: "desc" },
@@ -97,10 +143,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
             serviceName: service?.name ?? "Unknown",
             quantity: item._count.serviceId,
           };
-        })
+        }),
       );
 
       return result;
-    }
+    },
   );
 }
