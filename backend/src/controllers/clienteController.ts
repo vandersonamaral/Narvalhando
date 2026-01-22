@@ -20,35 +20,82 @@ export default async function clienteController(app: FastifyInstance) {
 
       const { name, phone } = parsed.data;
 
+      // Se o telefone foi fornecido, verificar se já existe
+      // Mas apenas se não for vazio/null
       if (phone && phone.trim()) {
         const existing = await prisma.client.findUnique({
           where: { phone: phone.trim() },
         });
 
         if (existing) {
-          return reply.status(409).send({ error: "Telefone já cadastrado" });
+          return reply.status(409).send({
+            error: "Este telefone já está cadastrado para outro cliente",
+          });
         }
       }
 
-      const client = await prisma.client.create({
-        data: {
-          name: name.trim(),
-          phone: phone && phone.trim() ? phone.trim() : null,
+      try {
+        const client = await prisma.client.create({
+          data: {
+            name: name.trim(),
+            phone: phone && phone.trim() ? phone.trim() : null,
+          },
+        });
+
+        return reply.send(client);
+      } catch (error: any) {
+        // Se houver erro de constraint unique no telefone
+        if (error.code === "P2002" && error.meta?.target?.includes("phone")) {
+          return reply.status(409).send({
+            error: "Este telefone já está cadastrado para outro cliente",
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.get(
+    "/clientes",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
+      // Retorna clientes que têm pelo menos 1 agendamento com este barbeiro
+      const clients = await prisma.client.findMany({
+        where: {
+          appointments: {
+            some: {
+              barberId,
+            },
+          },
         },
       });
 
-      return reply.send(client);
-    }
+      return clients;
+    },
   );
-
-  app.get("/clientes", { preHandler: [authenticate] }, async () => {
-    return await prisma.client.findMany();
-  });
 
   app.get(
     "/clientes/:id",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const parsed = idSchema.safeParse(request.params);
 
       if (!parsed.success) {
@@ -58,8 +105,15 @@ export default async function clienteController(app: FastifyInstance) {
         });
       }
 
-      const client = await prisma.client.findUnique({
-        where: { id: parsed.data.id },
+      const client = await prisma.client.findFirst({
+        where: {
+          id: parsed.data.id,
+          appointments: {
+            some: {
+              barberId,
+            },
+          },
+        },
       });
 
       if (!client) {
@@ -67,18 +121,32 @@ export default async function clienteController(app: FastifyInstance) {
       }
 
       return reply.send(client);
-    }
+    },
   );
 
   app.get(
     "/clientes/nome/:name",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const { name } = nameSchema.parse(request.params);
 
       const clients = await prisma.client.findMany({
         where: {
           name: { contains: name, mode: "insensitive" },
+          appointments: {
+            some: {
+              barberId,
+            },
+          },
         },
       });
 
@@ -87,13 +155,22 @@ export default async function clienteController(app: FastifyInstance) {
       }
 
       return reply.send(clients);
-    }
+    },
   );
 
   app.put(
     "/clientes/:id",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const params = idSchema.safeParse(request.params);
 
       if (!params.success) {
@@ -115,29 +192,71 @@ export default async function clienteController(app: FastifyInstance) {
       const id = params.data.id;
       const { name, phone } = parsed.data;
 
-      const existingClient = await prisma.client.findUnique({ where: { id } });
+      // Verifica se o cliente tem agendamento com este barbeiro
+      const existingClient = await prisma.client.findFirst({
+        where: {
+          id,
+          appointments: {
+            some: {
+              barberId,
+            },
+          },
+        },
+      });
 
       if (!existingClient) {
         return reply.status(404).send({ error: "Cliente não encontrado" });
       }
 
-      const updatedClient = await prisma.client.update({
-        where: { id },
-        data: {
-          name: name.trim(),
-          phone: phone && phone.trim() ? phone.trim() : null,
-        },
-      });
+      // Se está alterando o telefone, verificar se já existe em outro cliente
+      if (phone && phone.trim()) {
+        const phoneInUse = await prisma.client.findUnique({
+          where: { phone: phone.trim() },
+        });
 
-      return reply.send(updatedClient);
-    }
+        // Se o telefone já existe e não é do próprio cliente
+        if (phoneInUse && phoneInUse.id !== id) {
+          return reply.status(409).send({
+            error: "Este telefone já está cadastrado para outro cliente",
+          });
+        }
+      }
+
+      try {
+        const updatedClient = await prisma.client.update({
+          where: { id },
+          data: {
+            name: name.trim(),
+            phone: phone && phone.trim() ? phone.trim() : null,
+          },
+        });
+
+        return reply.send(updatedClient);
+      } catch (error: any) {
+        // Se houver erro de constraint unique no telefone
+        if (error.code === "P2002" && error.meta?.target?.includes("phone")) {
+          return reply.status(409).send({
+            error: "Este telefone já está cadastrado para outro cliente",
+          });
+        }
+        throw error;
+      }
+    },
   );
 
-  // DELETE
   app.delete(
     "/clientes/:id",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const parsed = idSchema.safeParse(request.params);
 
       if (!parsed.success) {
@@ -149,7 +268,17 @@ export default async function clienteController(app: FastifyInstance) {
 
       const id = parsed.data.id;
 
-      const existingClient = await prisma.client.findUnique({ where: { id } });
+      // Verifica se o cliente tem agendamento com este barbeiro
+      const existingClient = await prisma.client.findFirst({
+        where: {
+          id,
+          appointments: {
+            some: {
+              barberId,
+            },
+          },
+        },
+      });
 
       if (!existingClient) {
         return reply.status(404).send({ error: "Cliente não encontrado" });
@@ -158,6 +287,6 @@ export default async function clienteController(app: FastifyInstance) {
       await prisma.client.delete({ where: { id } });
 
       return reply.status(204).send();
-    }
+    },
   );
 }
