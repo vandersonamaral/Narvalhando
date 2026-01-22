@@ -31,7 +31,7 @@ export default async function appointmentController(app: FastifyInstance) {
               const date = new Date(val);
               return !isNaN(date.getTime());
             },
-            { message: "Data inválida" }
+            { message: "Data inválida" },
           ),
           clientId: z
             .number()
@@ -88,6 +88,74 @@ export default async function appointmentController(app: FastifyInstance) {
           });
         }
 
+        // Verificar conflito de horário - checando se já existe agendamento neste horário
+        const serviceDuration = service.duration; // duração em minutos
+        const appointmentEnd = new Date(
+          appointmentDate.getTime() + serviceDuration * 60000,
+        );
+
+        // Buscar agendamentos que podem conflitar
+        const conflictingAppointments = await prisma.appointment.findMany({
+          where: {
+            barberId,
+            status: { in: ["SCHEDULED"] }, // Apenas agendamentos ativos
+            date: {
+              gte: new Date(appointmentDate.getTime() - 2 * 60 * 60000), // 2 horas antes
+              lte: new Date(appointmentDate.getTime() + 2 * 60 * 60000), // 2 horas depois
+            },
+          },
+          include: {
+            service: true,
+          },
+        });
+
+        // Verificar se há conflito real de horário
+        for (const existing of conflictingAppointments) {
+          const existingStart = new Date(existing.date);
+          const existingEnd = new Date(
+            existingStart.getTime() + existing.service.duration * 60000,
+          );
+
+          // Verifica se os horários se sobrepõem
+          const hasConflict =
+            (appointmentDate >= existingStart &&
+              appointmentDate < existingEnd) ||
+            (appointmentEnd > existingStart && appointmentEnd <= existingEnd) ||
+            (appointmentDate <= existingStart && appointmentEnd >= existingEnd);
+
+          if (hasConflict) {
+            const conflictStartTime = existingStart.toLocaleTimeString(
+              "pt-BR",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            );
+            const conflictEndTime = existingEnd.toLocaleTimeString("pt-BR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            const requestedEndTime = appointmentEnd.toLocaleTimeString(
+              "pt-BR",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            );
+            const requestedStartTime = appointmentDate.toLocaleTimeString(
+              "pt-BR",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            );
+
+            return reply.status(409).send({
+              error: `Horário indisponível!\n\nJá existe um agendamento de ${conflictStartTime} às ${conflictEndTime} (${existing.service.name}).\n\nO serviço solicitado (${service.name}) tem duração de ${serviceDuration} minutos (${requestedStartTime} - ${requestedEndTime}) e conflita com este horário.\n\nPor favor, escolha outro horário.`,
+            });
+          }
+        }
+
         const appointment = await prisma.appointment.create({
           data: {
             date: appointmentDate,
@@ -119,28 +187,51 @@ export default async function appointmentController(app: FastifyInstance) {
           details: error.message || String(error),
         });
       }
-    }
+    },
   );
 
-  app.get("/appointment", { preHandler: [authenticate] }, async () => {
-    return prisma.appointment.findMany({
-      include: {
-        client: true,
-        service: true,
-        barber: true,
-      },
-    });
-  });
+  app.get(
+    "/appointment",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
+      return prisma.appointment.findMany({
+        where: { barberId },
+        include: {
+          client: true,
+          service: true,
+          barber: true,
+        },
+      });
+    },
+  );
 
   app.get(
     "/appointment/:id",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const parsed = idSchema.safeParse(request.params);
       if (!parsed.success) return reply.status(400).send(parsed.error.format());
 
-      const appointment = await prisma.appointment.findUnique({
-        where: { id: parsed.data.id },
+      const appointment = await prisma.appointment.findFirst({
+        where: { id: parsed.data.id, barberId },
         include: {
           client: true,
           service: true,
@@ -152,39 +243,66 @@ export default async function appointmentController(app: FastifyInstance) {
         return reply.status(404).send({ error: "Agendamento não encontrado" });
 
       return reply.send(appointment);
-    }
+    },
   );
 
-  app.get("/appointment/today", { preHandler: [authenticate] }, async () => {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+  app.get(
+    "/appointment/today",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
 
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
 
-    return prisma.appointment.findMany({
-      where: {
-        date: { gte: startOfDay, lte: endOfDay },
-      },
-      include: {
-        client: true,
-        service: true,
-        barber: true,
-      },
-    });
-  });
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
 
-  app.get("/appointment/future", { preHandler: [authenticate] }, async () => {
-    const now = new Date();
-    return prisma.appointment.findMany({
-      where: { date: { gt: now } },
-      include: {
-        client: true,
-        service: true,
-        barber: true,
-      },
-    });
-  });
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      return prisma.appointment.findMany({
+        where: {
+          barberId,
+          date: { gte: startOfDay, lte: endOfDay },
+        },
+        include: {
+          client: true,
+          service: true,
+          barber: true,
+        },
+      });
+    },
+  );
+
+  app.get(
+    "/appointment/future",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
+      const now = new Date();
+      return prisma.appointment.findMany({
+        where: { barberId, date: { gt: now } },
+        include: {
+          client: true,
+          service: true,
+          barber: true,
+        },
+      });
+    },
+  );
 
   app.get(
     "/appointment/by-date",
@@ -195,6 +313,15 @@ export default async function appointmentController(app: FastifyInstance) {
 
       const date = new Date(parsed.data.date);
 
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const start = new Date(date);
       start.setHours(0, 0, 0, 0);
 
@@ -202,7 +329,7 @@ export default async function appointmentController(app: FastifyInstance) {
       end.setHours(23, 59, 59, 999);
 
       const appointments = await prisma.appointment.findMany({
-        where: { date: { gte: start, lte: end } },
+        where: { barberId, date: { gte: start, lte: end } },
         include: {
           client: true,
           service: true,
@@ -211,20 +338,29 @@ export default async function appointmentController(app: FastifyInstance) {
       });
 
       return reply.send(appointments);
-    }
+    },
   );
 
   app.get(
     "/appointment/by-client/:id",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const parsed = idSchema.safeParse(request.params);
       if (!parsed.success) return reply.status(400).send(parsed.error.format());
 
       const { id } = parsed.data;
 
       const appointments = await prisma.appointment.findMany({
-        where: { clientId: id },
+        where: { clientId: id, barberId },
         include: {
           client: true,
           service: true,
@@ -233,13 +369,22 @@ export default async function appointmentController(app: FastifyInstance) {
       });
 
       return reply.send(appointments);
-    }
+    },
   );
 
   app.get(
     "/appointment/status/:status",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const schema = z.object({
         status: statusSchema.shape.status,
       });
@@ -250,20 +395,29 @@ export default async function appointmentController(app: FastifyInstance) {
       const { status } = parsed.data;
 
       return prisma.appointment.findMany({
-        where: { status },
+        where: { barberId, status },
         include: {
           client: true,
           service: true,
           barber: true,
         },
       });
-    }
+    },
   );
 
   app.put(
     "/appointment/:id",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const idParsed = idSchema.safeParse(request.params);
       if (!idParsed.success)
         return reply.status(400).send(idParsed.error.format());
@@ -272,12 +426,104 @@ export default async function appointmentController(app: FastifyInstance) {
       if (!bodyParsed.success)
         return reply.status(400).send(bodyParsed.error.format());
 
+      // Verifica se o agendamento pertence ao barbeiro
+      const existingAppointment = await prisma.appointment.findFirst({
+        where: { id: idParsed.data.id, barberId },
+      });
+
+      if (!existingAppointment) {
+        return reply.status(404).send({ error: "Agendamento não encontrado" });
+      }
+
       const { date, serviceId, paymentType } = bodyParsed.data;
 
       const updateData: any = {};
       if (date) updateData.date = new Date(date);
       if (serviceId) updateData.serviceId = serviceId;
       if (paymentType) updateData.paymentType = paymentType;
+
+      // Se está alterando data ou serviço, verificar conflito de horário
+      if (date || serviceId) {
+        const appointmentDate = date
+          ? new Date(date)
+          : existingAppointment.date;
+        const newServiceId = serviceId || existingAppointment.serviceId;
+
+        const service = await prisma.service.findUnique({
+          where: { id: newServiceId },
+        });
+
+        if (!service) {
+          return reply.status(404).send({ error: "Serviço não encontrado" });
+        }
+
+        const serviceDuration = service.duration;
+        const appointmentEnd = new Date(
+          appointmentDate.getTime() + serviceDuration * 60000,
+        );
+
+        // Buscar agendamentos que podem conflitar (excluindo o próprio agendamento sendo editado)
+        const conflictingAppointments = await prisma.appointment.findMany({
+          where: {
+            barberId,
+            id: { not: idParsed.data.id }, // Excluir o agendamento atual
+            status: { in: ["SCHEDULED"] },
+            date: {
+              gte: new Date(appointmentDate.getTime() - 2 * 60 * 60000),
+              lte: new Date(appointmentDate.getTime() + 2 * 60 * 60000),
+            },
+          },
+          include: {
+            service: true,
+          },
+        });
+
+        // Verificar se há conflito real de horário
+        for (const existing of conflictingAppointments) {
+          const existingStart = new Date(existing.date);
+          const existingEnd = new Date(
+            existingStart.getTime() + existing.service.duration * 60000,
+          );
+
+          const hasConflict =
+            (appointmentDate >= existingStart &&
+              appointmentDate < existingEnd) ||
+            (appointmentEnd > existingStart && appointmentEnd <= existingEnd) ||
+            (appointmentDate <= existingStart && appointmentEnd >= existingEnd);
+
+          if (hasConflict) {
+            const conflictStartTime = existingStart.toLocaleTimeString(
+              "pt-BR",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            );
+            const conflictEndTime = existingEnd.toLocaleTimeString("pt-BR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            const requestedEndTime = appointmentEnd.toLocaleTimeString(
+              "pt-BR",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            );
+            const requestedStartTime = appointmentDate.toLocaleTimeString(
+              "pt-BR",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            );
+
+            return reply.status(409).send({
+              error: `Horário indisponível!\n\nJá existe um agendamento de ${conflictStartTime} às ${conflictEndTime} (${existing.service.name}).\n\nO serviço solicitado (${service.name}) tem duração de ${serviceDuration} minutos (${requestedStartTime} - ${requestedEndTime}) e conflita com este horário.\n\nPor favor, escolha outro horário.`,
+            });
+          }
+        }
+      }
 
       const appointment = await prisma.appointment.update({
         where: { id: idParsed.data.id },
@@ -290,13 +536,22 @@ export default async function appointmentController(app: FastifyInstance) {
       });
 
       return reply.send(appointment);
-    }
+    },
   );
 
   app.patch(
     "/appointment/:id/status",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const idParsed = idSchema.safeParse(request.params);
       if (!idParsed.success)
         return reply.status(400).send(idParsed.error.format());
@@ -304,6 +559,15 @@ export default async function appointmentController(app: FastifyInstance) {
       const statusParsed = statusSchema.safeParse(request.body);
       if (!statusParsed.success)
         return reply.status(400).send(statusParsed.error.format());
+
+      // Verifica se o agendamento pertence ao barbeiro
+      const existingAppointment = await prisma.appointment.findFirst({
+        where: { id: idParsed.data.id, barberId },
+      });
+
+      if (!existingAppointment) {
+        return reply.status(404).send({ error: "Agendamento não encontrado" });
+      }
 
       const appointment = await prisma.appointment.update({
         where: { id: idParsed.data.id },
@@ -316,15 +580,33 @@ export default async function appointmentController(app: FastifyInstance) {
       });
 
       return reply.send(appointment);
-    }
+    },
   );
 
   app.put(
     "/appointment/:id/complete",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const parsed = idSchema.safeParse(request.params);
       if (!parsed.success) return reply.status(400).send(parsed.error.format());
+
+      // Verifica se o agendamento pertence ao barbeiro
+      const existingAppointment = await prisma.appointment.findFirst({
+        where: { id: parsed.data.id, barberId },
+      });
+
+      if (!existingAppointment) {
+        return reply.status(404).send({ error: "Agendamento não encontrado" });
+      }
 
       const appointment = await prisma.appointment.update({
         where: { id: parsed.data.id },
@@ -337,13 +619,22 @@ export default async function appointmentController(app: FastifyInstance) {
       });
 
       return reply.send(appointment);
-    }
+    },
   );
 
   app.patch(
     "/appointment/:id/payment",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const idParsed = idSchema.safeParse(request.params);
       if (!idParsed.success)
         return reply.status(400).send(idParsed.error.format());
@@ -356,6 +647,15 @@ export default async function appointmentController(app: FastifyInstance) {
       if (!bodyParsed.success)
         return reply.status(400).send(bodyParsed.error.format());
 
+      // Verifica se o agendamento pertence ao barbeiro
+      const existingAppointment = await prisma.appointment.findFirst({
+        where: { id: idParsed.data.id, barberId },
+      });
+
+      if (!existingAppointment) {
+        return reply.status(404).send({ error: "Agendamento não encontrado" });
+      }
+
       const appointment = await prisma.appointment.update({
         where: { id: idParsed.data.id },
         data: { paymentType: bodyParsed.data.paymentType },
@@ -367,18 +667,36 @@ export default async function appointmentController(app: FastifyInstance) {
       });
 
       return reply.send(appointment);
-    }
+    },
   );
 
   app.delete(
     "/appointment/:id",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const parsed = idSchema.safeParse(request.params);
       if (!parsed.success) return reply.status(400).send(parsed.error.format());
 
+      // Verifica se o agendamento pertence ao barbeiro
+      const existingAppointment = await prisma.appointment.findFirst({
+        where: { id: parsed.data.id, barberId },
+      });
+
+      if (!existingAppointment) {
+        return reply.status(404).send({ error: "Agendamento não encontrado" });
+      }
+
       await prisma.appointment.delete({ where: { id: parsed.data.id } });
       return reply.status(204).send();
-    }
+    },
   );
 }
