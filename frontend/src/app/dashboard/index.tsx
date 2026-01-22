@@ -82,9 +82,15 @@ export default function Dashboard() {
 
       setStats(statsData);
       setRevenue(revenueData);
-      setTodayAppointments(
-        Array.isArray(appointmentsData) ? appointmentsData : []
-      );
+
+      // Ordenar agendamentos de hoje por horário
+      const sortedAppointments = Array.isArray(appointmentsData)
+        ? appointmentsData.sort(
+            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+          )
+        : [];
+
+      setTodayAppointments(sortedAppointments);
     } catch (error) {
       ErrorHandler.showAlert(error, "Erro ao carregar dashboard");
       // Garantir que todayAppointments seja sempre um array
@@ -132,7 +138,7 @@ export default function Dashboard() {
     try {
       await appointmentService.updatePayment(
         selectedAppointment.id,
-        paymentType
+        paymentType,
       );
       await appointmentService.complete(selectedAppointment.id);
       setShowPaymentModal(false);
@@ -163,12 +169,13 @@ export default function Dashboard() {
         }),
       ]).start();
 
+      // Recarregar dados em background
+      loadDashboardData();
+
       // Fechar modal automaticamente após 2.5 segundos
       setTimeout(() => {
         handleCloseSuccessModal();
       }, 2500);
-
-      loadDashboardData();
     } catch (error) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       ErrorHandler.showAlert(error, "Erro ao concluir");
@@ -211,22 +218,22 @@ export default function Dashboard() {
             try {
               await appointmentService.updateStatus(
                 selectedAppointment.id,
-                "CANCELED"
+                "CANCELED",
               );
               await Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Warning
+                Haptics.NotificationFeedbackType.Warning,
               );
               Alert.alert("Sucesso", "Agendamento cancelado!");
               loadDashboardData();
             } catch (error) {
               await Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Error
+                Haptics.NotificationFeedbackType.Error,
               );
               ErrorHandler.showAlert(error, "Erro ao cancelar");
             }
           },
         },
-      ]
+      ],
     );
   }
 
@@ -247,19 +254,19 @@ export default function Dashboard() {
             try {
               await appointmentService.delete(selectedAppointment.id);
               await Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Success
+                Haptics.NotificationFeedbackType.Success,
               );
               Alert.alert("Sucesso", "Agendamento excluído permanentemente!");
               loadDashboardData();
             } catch (error) {
               await Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Error
+                Haptics.NotificationFeedbackType.Error,
               );
               ErrorHandler.showAlert(error, "Erro ao excluir");
             }
           },
         },
-      ]
+      ],
     );
   }
 
