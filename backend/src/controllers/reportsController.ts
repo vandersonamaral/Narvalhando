@@ -8,8 +8,18 @@ export default async function reportsController(app: FastifyInstance) {
     "/reports/appointments-by-service",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const rawData = await prisma.appointment.groupBy({
         by: ["serviceId"],
+        where: { barberId },
         _count: { id: true },
       });
 
@@ -21,7 +31,7 @@ export default async function reportsController(app: FastifyInstance) {
       });
 
       const map = new Map(
-        services.map((s) => [s.id, { name: s.name, price: s.price }])
+        services.map((s) => [s.id, { name: s.name, price: s.price }]),
       );
 
       const result = rawData.map((i) => ({
@@ -32,41 +42,24 @@ export default async function reportsController(app: FastifyInstance) {
       }));
 
       return reply.send(result);
-    }
+    },
   );
 
-  app.get(
-    "/reports/appointments-by-barber",
-    { preHandler: [authenticate] },
-    async (request, reply) => {
-      const rawData = await prisma.appointment.groupBy({
-        by: ["barberId"],
-        _count: { id: true },
-      });
-
-      const barberIds = rawData.map((i) => i.barberId);
-
-      const barbers = await prisma.barber.findMany({
-        where: { id: { in: barberIds } },
-        select: { id: true, name: true },
-      });
-
-      const map = new Map(barbers.map((b) => [b.id, b.name]));
-
-      const result = rawData.map((i) => ({
-        barberId: i.barberId,
-        barberName: map.get(i.barberId) || "Unknown",
-        appointmentCount: i._count.id,
-      }));
-
-      return reply.send(result);
-    }
-  );
+  // Rota removida: cada barbeiro vê apenas seus próprios dados
 
   app.get(
     "/reports/appointments-by-date",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const parsed = dateQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return reply
@@ -82,33 +75,53 @@ export default async function reportsController(app: FastifyInstance) {
       end.setHours(23, 59, 59, 999);
 
       const appointments = await prisma.appointment.count({
-        where: { date: { gte: start, lte: end } },
+        where: { barberId, date: { gte: start, lte: end } },
       });
 
       return reply.send({ date: parsed.data.date, appointments });
-    }
+    },
   );
 
   app.get(
     "/reports/total-appointments",
     { preHandler: [authenticate] },
-    async () => {
-      const count = await prisma.appointment.count();
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
+      const count = await prisma.appointment.count({
+        where: { barberId },
+      });
       return { totalAppointments: count };
-    }
+    },
   );
 
   app.get(
     "/reports/weekly-summary",
     { preHandler: [authenticate] },
-    async () => {
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const now = new Date();
       const start = new Date(now);
       start.setDate(now.getDate() - 7);
       start.setHours(0, 0, 0, 0);
 
       const appointments = await prisma.appointment.findMany({
-        where: { date: { gte: start, lte: now } },
+        where: { barberId, date: { gte: start, lte: now } },
         include: { service: true },
       });
 
@@ -116,7 +129,7 @@ export default async function reportsController(app: FastifyInstance) {
 
       const revenue = appointments.reduce(
         (acc, ap) => acc + (ap.service?.price || 0),
-        0
+        0,
       );
 
       return {
@@ -124,18 +137,27 @@ export default async function reportsController(app: FastifyInstance) {
         totalAppointments: total,
         totalRevenue: revenue,
       };
-    }
+    },
   );
 
   app.get(
     "/reports/monthly-summary",
     { preHandler: [authenticate] },
-    async () => {
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
       const now = new Date();
       const start = new Date(now.getFullYear(), now.getMonth(), 1);
 
       const appointments = await prisma.appointment.findMany({
-        where: { date: { gte: start, lte: now } },
+        where: { barberId, date: { gte: start, lte: now } },
         include: { service: true },
       });
 
@@ -143,7 +165,7 @@ export default async function reportsController(app: FastifyInstance) {
 
       const revenue = appointments.reduce(
         (acc, ap) => acc + (ap.service?.price || 0),
-        0
+        0,
       );
 
       return {
@@ -151,14 +173,25 @@ export default async function reportsController(app: FastifyInstance) {
         totalAppointments: total,
         totalRevenue: revenue,
       };
-    }
+    },
   );
 
   app.get(
     "/reports/popular-hours",
     { preHandler: [authenticate] },
-    async () => {
-      const appointments = await prisma.appointment.findMany();
+    async (request, reply) => {
+      const user = request.user as
+        | { id: number; name: string; email: string }
+        | undefined;
+      const barberId = user?.id;
+
+      if (!barberId) {
+        return reply.status(401).send({ error: "Usuário não autenticado" });
+      }
+
+      const appointments = await prisma.appointment.findMany({
+        where: { barberId },
+      });
 
       const hourMap: Record<string, number> = {};
 
@@ -173,6 +206,6 @@ export default async function reportsController(app: FastifyInstance) {
       }));
 
       return result.sort((a, b) => b.appointmentCount - a.appointmentCount);
-    }
+    },
   );
 }
