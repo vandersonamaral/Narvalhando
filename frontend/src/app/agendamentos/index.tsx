@@ -238,8 +238,7 @@ export default function Agendamentos() {
     if (appointment.client) {
       Alert.alert(
         appointment.client.name,
-        `Telefone: ${appointment.client.phone || "Não informado"}\nEmail: ${
-          appointment.client.email || "Não informado"
+        `Telefone: ${appointment.client.phone || "Não informado"}\nEmail:
         }`,
       );
     }
