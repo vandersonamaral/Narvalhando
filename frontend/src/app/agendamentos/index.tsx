@@ -13,6 +13,7 @@ import {
   Modal,
   SafeAreaView,
 } from "react-native";
+import * as Haptics from "expo-haptics";
 import {
   appointmentService,
   Appointment,
@@ -109,9 +110,9 @@ export default function Agendamentos() {
           data = await appointmentService.getAll();
       }
 
-      // Ordenar por data
+      // Ordenar por data e hora
       data.sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
       );
       setAppointments(data);
       setFilteredAppointments(data);
@@ -129,6 +130,7 @@ export default function Agendamentos() {
   }
 
   async function handleCancelAppointment(id: number) {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Cancelar Agendamento",
       "Tem certeza que deseja cancelar este agendamento?",
@@ -140,18 +142,25 @@ export default function Agendamentos() {
           onPress: async () => {
             try {
               await appointmentService.updateStatus(id, "CANCELED");
+              await Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Warning,
+              );
               Alert.alert("Sucesso", "Agendamento cancelado!");
               loadAppointments();
             } catch (error) {
+              await Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Error,
+              );
               ErrorHandler.showAlert(error, "Erro ao cancelar");
             }
           },
         },
-      ]
+      ],
     );
   }
 
   async function handleDeleteAppointment(id: number) {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     Alert.alert(
       "Excluir Agendamento",
       "⚠️ ATENÇÃO: Esta ação é irreversível!\n\nAo excluir, este agendamento será removido permanentemente e não aparecerá em nenhum relatório ou contabilidade.\n\nDeseja realmente excluir?",
@@ -163,18 +172,25 @@ export default function Agendamentos() {
           onPress: async () => {
             try {
               await appointmentService.delete(id);
+              await Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Success,
+              );
               Alert.alert("Sucesso", "Agendamento excluído permanentemente!");
               loadAppointments();
             } catch (error) {
+              await Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Error,
+              );
               ErrorHandler.showAlert(error, "Erro ao excluir");
             }
           },
         },
-      ]
+      ],
     );
   }
 
   async function handleCompleteAppointment(id: number) {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     // Abrir modal para selecionar forma de pagamento
     setSelectedAppointmentId(id);
     setSelectedPaymentType("CASH"); // Valor padrão
@@ -188,16 +204,25 @@ export default function Agendamentos() {
       // Primeiro atualiza o tipo de pagamento
       await appointmentService.updatePayment(
         selectedAppointmentId,
-        selectedPaymentType
+        selectedPaymentType,
       );
 
       // Depois marca como concluído
       await appointmentService.complete(selectedAppointmentId);
 
+      // Vibração forte de sucesso
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // Vibração adicional para reforçar
+      setTimeout(async () => {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      }, 100);
+
       setShowPaymentModal(false);
       Alert.alert("Sucesso", "Agendamento concluído!");
       loadAppointments();
     } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       ErrorHandler.showAlert(error, "Erro ao concluir");
     }
   }
@@ -216,16 +241,6 @@ export default function Agendamentos() {
         `Telefone: ${appointment.client.phone || "Não informado"}\nEmail: ${
           appointment.client.email || "Não informado"
         }`,
-        [
-          { text: "Fechar", style: "cancel" },
-          {
-            text: "Ligar",
-            onPress: () => {
-              // TODO: Implementar ligação
-              Alert.alert("Em breve", "Função de ligação em desenvolvimento");
-            },
-          },
-        ]
       );
     }
   }
@@ -539,7 +554,7 @@ export default function Agendamentos() {
                             styles.paymentBadge,
                             {
                               backgroundColor: getPaymentColor(
-                                appointment.paymentType
+                                appointment.paymentType,
                               ),
                             },
                           ]}
